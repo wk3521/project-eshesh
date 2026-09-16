@@ -74,6 +74,8 @@ export default function Signup() {
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            pattern=".+@.+\.edu"
+            title="Please use a valid .edu email address"
             required
           />
         </div>
@@ -84,6 +86,8 @@ export default function Signup() {
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            minLength={8}
+            title="Password must be at least 8 characters"
             required
           />
         </div>

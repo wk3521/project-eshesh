@@ -1,0 +1,28 @@
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# env files (per-project .gitignore may opt back in for specific files)
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+
+# common dependency/build dirs, in case other projects (e.g. backend/) add their own
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
