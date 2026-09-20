@@ -35,7 +35,12 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <header className="flex justify-end p-4">
           {user ? (
             <div className="flex flex-col items-end gap-1">
-              <span>{user.email}</span>
+              <Link href={`/profile/${user.id}`} className="cursor-pointer">
+                {user.email}
+              </Link>
+              <Link href="/projects" className="cursor-pointer">
+                My projects
+              </Link>
               <LogoutButton />
             </div>
           ) : (
