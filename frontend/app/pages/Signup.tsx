@@ -4,6 +4,12 @@ import { useState, FormEvent } from 'react'
 import Link from 'next/link'
 import { signUpNewUser } from '@/app/auth'
 import styles from './Signup.module.css'
+import majorJson from '../../resources/majors.json'
+
+
+const currentYear = new Date().getFullYear()
+const gradYearOptions = Array.from({ length: 5 }, (_, i) => currentYear + i)
+const majorOptions: string[] = majorJson as string[]
 
 export default function Signup() {
   const [email, setEmail] = useState('')
@@ -103,23 +109,39 @@ export default function Signup() {
         </div>
         <div className={styles.field}>
           <label htmlFor="major">Major</label>
-          <input
+          <select
             id="major"
-            type="text"
             value={major}
             onChange={(event) => setMajor(event.target.value)}
             required
-          />
+          >
+          <option value= "" disabled>
+            Select a major
+          </option>
+          {majorOptions.map((major) => (
+              <option key = {major} value = {major}>
+                {major}
+              </option>
+          ))}
+          </select>
         </div>
         <div className={styles.field}>
           <label htmlFor="gradYear">Grad Year</label>
-          <input
+          <select
             id="gradYear"
-            type="number"
             value={gradYear}
             onChange={(event) => setGradYear(event.target.value)}
             required
-          />
+          >
+            <option value="" disabled>
+              Select a year
+            </option>
+            {gradYearOptions.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
         </div>
         {error && (
           <p role="alert" className={styles.error}>
