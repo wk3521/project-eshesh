@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/app/components/LogoutButton";
+import UserSearch from "@/app/components/UserSearch";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,7 +33,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <header className="flex justify-end p-4">
+        <header className="flex items-start justify-between gap-4 p-4">
+          <UserSearch />
           {user ? (
             <div className="flex flex-col items-end gap-1">
               <Link href={`/profile/${user.id}`} className="cursor-pointer">

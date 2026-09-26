@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { escapeLike } from '@/lib/search'
 import ResumePreview from './ResumePreview'
 import styles from '../pages/Profile.module.css'
 
@@ -137,11 +138,6 @@ function storagePath(kind: UploadKind, value: string | null) {
   const marker = `/storage/v1/object/public/${bucket}/`
   const index = value.indexOf(marker)
   return index >= 0 ? decodeURIComponent(value.slice(index + marker.length)) : null
-}
-
-// Escape ilike wildcards so "%" and "_" in the search are matched literally
-function escapeLike(value: string) {
-  return value.replace(/[\\%_]/g, (char) => `\\${char}`)
 }
 
 export default function ProfileDetails({
