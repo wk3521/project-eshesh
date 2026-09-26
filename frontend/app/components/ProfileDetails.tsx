@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import ResumePreview from './ResumePreview'
 import styles from '../pages/Profile.module.css'
 
 export type ProfileRow = {
@@ -13,6 +14,8 @@ export type ProfileRow = {
   grad_year: number | null
   bio: string | null
   avatar_url: string | null
+  background_url: string | null
+  resume_path: string | null
   created_at: string
 }
 
@@ -21,7 +24,7 @@ export type Skill = {
   name: string
 }
 
-type EditableField = 'full_name' | 'school' | 'major' | 'grad_year' | 'bio' | 'avatar_url'
+type EditableField = 'full_name' | 'school' | 'major' | 'grad_year' | 'bio'
 
 const editableFields: { key: EditableField; label: string }[] = [
   { key: 'full_name', label: 'Full Name' },
@@ -29,11 +32,86 @@ const editableFields: { key: EditableField; label: string }[] = [
   { key: 'major', label: 'Major' },
   { key: 'grad_year', label: 'Grad Year' },
   { key: 'bio', label: 'Bio' },
-  { key: 'avatar_url', label: 'Avatar URL' },
 ]
 
 const SKILL_RESULT_LIMIT = 50
 const SKILL_SEARCH_DELAY_MS = 250
+
+type UploadKind = 'avatar' | 'background' | 'resume'
+type UploadColumn = 'avatar_url' | 'background_url' | 'resume_path'
+
+const IMAGE_TYPES = {
+  types: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+  extensions: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],
+  description: 'a JPEG, PNG, WebP, or GIF image',
+}
+
+// Keep in sync with the bucket settings in Supabase Storage
+const uploads: Record<
+  UploadKind,
+  {
+    column: UploadColumn
+    bucket: string
+    label: string
+    maxMb: number
+    accept: typeof IMAGE_TYPES
+    // Whether the column holds the public URL or the path inside the bucket
+    stores: 'url' | 'path'
+  }
+> = {
+  avatar: {
+    column: 'avatar_url',
+    bucket: 'avatars',
+    label: 'Profile Picture',
+    maxMb: 5,
+    accept: IMAGE_TYPES,
+    stores: 'url',
+  },
+  background: {
+    column: 'background_url',
+    bucket: 'backgrounds',
+    label: 'Background Image',
+    maxMb: 10,
+    accept: IMAGE_TYPES,
+    stores: 'url',
+  },
+  resume: {
+    column: 'resume_path',
+    bucket: 'resumes',
+    label: 'Resume',
+    maxMb: 10,
+    accept: {
+      types: [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ],
+      extensions: ['.pdf', '.docx'],
+      description: 'a PDF or Word (.docx) file',
+    },
+    stores: 'path',
+  },
+}
+
+const uploadKinds = Object.keys(uploads) as UploadKind[]
+
+const noUploads: Record<UploadKind, null> = { avatar: null, background: null, resume: null }
+
+function fileExtension(name: string) {
+  const dot = name.lastIndexOf('.')
+  return dot >= 0 ? name.slice(dot).toLowerCase() : ''
+}
+
+// Some systems report an empty type for .docx files, so fall back to the extension
+function isAccepted(kind: UploadKind, file: File) {
+  const { types, extensions } = uploads[kind].accept
+  return types.includes(file.type) || (!file.type && extensions.includes(fileExtension(file.name)))
+}
+
+// The bucket's content type for the upload, even when the browser didn't report one
+function contentType(kind: UploadKind, file: File) {
+  const { types, extensions } = uploads[kind].accept
+  return file.type || types[extensions.indexOf(fileExtension(file.name))] || types[0]
+}
 
 function toFormValues(profile: ProfileRow): Record<EditableField, string> {
   return {
@@ -42,8 +120,23 @@ function toFormValues(profile: ProfileRow): Record<EditableField, string> {
     major: profile.major ?? '',
     grad_year: profile.grad_year?.toString() ?? '',
     bio: profile.bio ?? '',
-    avatar_url: profile.avatar_url ?? '',
   }
+}
+
+// A new name per upload, so browsers don't keep showing a cached old file
+function newUploadPath(profileId: string, file: File) {
+  return `${profileId}/${Date.now()}${fileExtension(file.name)}`
+}
+
+// Returns the file's path inside the bucket, or null for URLs outside it
+function storagePath(kind: UploadKind, value: string | null) {
+  const { bucket, stores } = uploads[kind]
+  if (!value) return null
+  if (stores === 'path') return value
+
+  const marker = `/storage/v1/object/public/${bucket}/`
+  const index = value.indexOf(marker)
+  return index >= 0 ? decodeURIComponent(value.slice(index + marker.length)) : null
 }
 
 // Escape ilike wildcards so "%" and "_" in the search are matched literally
@@ -68,6 +161,9 @@ export default function ProfileDetails({
   const [skillResults, setSkillResults] = useState<Skill[]>([])
   const [searchingSkills, setSearchingSkills] = useState(false)
   const [showSkillResults, setShowSkillResults] = useState(false)
+  const [uploadFiles, setUploadFiles] = useState<Record<UploadKind, File | null>>(noUploads)
+  const [imagePreviews, setImagePreviews] = useState<Record<UploadKind, string | null>>(noUploads)
+  const [removeResume, setRemoveResume] = useState(false)
   const skillPickerRef = useRef<HTMLDivElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -143,6 +239,39 @@ export default function ProfileDetails({
 
     setSaving(true)
     const supabase = createClient()
+
+    const uploaded: { kind: UploadKind; path: string }[] = []
+    const newFileValues: Partial<Record<UploadColumn, string | null>> = {}
+
+    async function removeUploaded() {
+      for (const { kind, path } of uploaded) {
+        await supabase.storage.from(uploads[kind].bucket).remove([path])
+      }
+    }
+
+    for (const kind of uploadKinds) {
+      const file = uploadFiles[kind]
+      if (!file) continue
+
+      const { bucket, column, stores } = uploads[kind]
+      const path = newUploadPath(profile.id, file)
+      const { error } = await supabase.storage
+        .from(bucket)
+        .upload(path, file, { contentType: contentType(kind, file) })
+      if (error) {
+        await removeUploaded()
+        setSaving(false)
+        setError(error.message)
+        return
+      }
+      uploaded.push({ kind, path })
+      newFileValues[column] =
+        stores === 'path' ? path : supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl
+    }
+
+    const resumeRemoved = removeResume && !uploadFiles.resume && Boolean(profile.resume_path)
+    if (resumeRemoved) newFileValues.resume_path = null
+
     const { error } = await supabase
       .from('profiles')
       .update({
@@ -151,14 +280,24 @@ export default function ProfileDetails({
         major: values.major.trim() || null,
         grad_year: gradYear ? Number(gradYear) : null,
         bio: values.bio.trim() || null,
-        avatar_url: values.avatar_url.trim() || null,
+        ...newFileValues,
       })
       .eq('id', profile.id)
 
     if (error) {
+      await removeUploaded()
       setSaving(false)
       setError(error.message)
       return
+    }
+
+    // Best effort: the profile no longer points at these files, so a failed cleanup
+    // isn't shown as an error
+    const replacedKinds: UploadKind[] = uploaded.map(({ kind }) => kind)
+    if (resumeRemoved) replacedKinds.push('resume')
+    for (const kind of replacedKinds) {
+      const oldPath = storagePath(kind, profile[uploads[kind].column])
+      if (oldPath) await supabase.storage.from(uploads[kind].bucket).remove([oldPath])
     }
 
     const removedSkillIds = skills.map((s) => s.id).filter((id) => !selectedSkillIds.has(id))
@@ -191,6 +330,7 @@ export default function ProfileDetails({
 
     setSaving(false)
     setEditing(false)
+    clearUploads()
     router.refresh()
   }
 
@@ -199,19 +339,89 @@ export default function ProfileDetails({
     setSelectedSkills(skills)
     setSkillQuery('')
     setShowSkillResults(false)
+    clearUploads()
     setError(null)
     setEditing(true)
   }
 
   function handleCancel() {
     setEditing(false)
+    clearUploads()
     setError(null)
+  }
+
+  function setUpload(kind: UploadKind, file: File | null) {
+    setUploadFiles((prev) => ({ ...prev, [kind]: file }))
+    if (uploads[kind].accept !== IMAGE_TYPES) return
+    setImagePreviews((prev) => {
+      if (prev[kind]) URL.revokeObjectURL(prev[kind])
+      return { ...prev, [kind]: file ? URL.createObjectURL(file) : null }
+    })
+  }
+
+  function clearUploads() {
+    for (const kind of uploadKinds) setUpload(kind, null)
+    setRemoveResume(false)
+  }
+
+  // Returns false when the file is rejected; the selection is cleared in that case
+  function handleUploadChange(kind: UploadKind, file: File | null) {
+    const { label, maxMb, accept } = uploads[kind]
+    let problem: string | null = null
+    if (file && !isAccepted(kind, file)) {
+      problem = `${label} must be ${accept.description}.`
+    } else if (file && file.size > maxMb * 1024 * 1024) {
+      problem = `${label} must be ${maxMb} MB or smaller.`
+    }
+
+    setError(problem)
+    setUpload(kind, problem ? null : file)
+    if (kind === 'resume' && file && !problem) setRemoveResume(false)
+    return !problem
   }
 
   const details = (
     <dl className={styles.details}>
       <dt>ID</dt>
       <dd>{profile.id}</dd>
+      {editing &&
+        uploadKinds.map((kind) => (
+          <div key={kind} className={styles.row}>
+            <dt>
+              <label htmlFor={kind}>{uploads[kind].label}</label>
+            </dt>
+            <dd className={styles.imageField}>
+              {imagePreviews[kind] && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={imagePreviews[kind]}
+                  alt={`New ${uploads[kind].label.toLowerCase()} preview`}
+                  className={kind === 'avatar' ? styles.avatarPreview : styles.backgroundPreview}
+                />
+              )}
+              <input
+                id={kind}
+                type="file"
+                accept={[...uploads[kind].accept.types, ...uploads[kind].accept.extensions].join(',')}
+                onChange={(event) => {
+                  // Clear rejected files so the input matches what will be saved
+                  const file = event.target.files?.[0] ?? null
+                  if (!handleUploadChange(kind, file)) event.target.value = ''
+                }}
+              />
+              {kind === 'resume' && profile.resume_path && !uploadFiles.resume && (
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={removeResume}
+                    onChange={(event) => setRemoveResume(event.target.checked)}
+                  />
+                  Remove current resume
+                </label>
+              )}
+            </dd>
+          </div>
+        ))}
       {editableFields.map(({ key, label }) => (
         <div key={key} className={styles.row}>
           <dt>{editing ? <label htmlFor={key}>{label}</label> : label}</dt>
@@ -240,7 +450,7 @@ export default function ProfileDetails({
   const shownSkills = editing ? selectedSkills : skills
 
   const skillsSection = (
-    <section className={styles.skills}>
+    <section className={styles.section}>
       <h2>Skills</h2>
       {shownSkills.length > 0 ? (
         <ul className={styles.chips} aria-label={editing ? 'Selected skills' : undefined}>
@@ -313,11 +523,27 @@ export default function ProfileDetails({
     </section>
   )
 
+  const resumeName = profile.full_name ? `${profile.full_name}'s resume` : 'Resume'
+
   if (!editing) {
     return (
       <>
         {details}
         {skillsSection}
+        <section className={styles.section}>
+          <h2>Resume</h2>
+          {profile.resume_path ? (
+            <ResumePreview
+              url={
+                createClient().storage.from(uploads.resume.bucket).getPublicUrl(profile.resume_path)
+                  .data.publicUrl
+              }
+              name={resumeName}
+            />
+          ) : (
+            <p>No resume added yet.</p>
+          )}
+        </section>
         {isOwnProfile && (
           <button type="button" onClick={handleEdit} className={styles.button}>
             Edit
