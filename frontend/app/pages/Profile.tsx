@@ -6,9 +6,14 @@ import styles from './Profile.module.css'
 export default async function Profile({ profileId }: { profileId: string }) {
   const supabase = await createClient()
 
-  const [{ data: profile }, { data: { user } }] = await Promise.all([
+  const [{ data: profile }, { data: { user } }, { data: skills }] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', profileId).maybeSingle(),
     supabase.auth.getUser(),
+    supabase
+      .from('skills')
+      .select('id, name, profile_skills!inner()')
+      .eq('profile_skills.profile_id', profileId)
+      .order('name'),
   ])
 
   if (!profile) notFound()
@@ -21,7 +26,11 @@ export default async function Profile({ profileId }: { profileId: string }) {
         // eslint-disable-next-line @next/next/no-img-element
         <img src={profile.avatar_url} alt="" className={styles.avatar} />
       )}
-      <ProfileDetails profile={profile} isOwnProfile={isOwnProfile} />
+      <ProfileDetails
+        profile={profile}
+        skills={(skills ?? []).map(({ id, name }) => ({ id, name }))}
+        isOwnProfile={isOwnProfile}
+      />
     </main>
   )
 }
