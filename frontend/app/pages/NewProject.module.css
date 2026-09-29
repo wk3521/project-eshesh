@@ -23,6 +23,34 @@
   color: red;
 }
 
+.combobox {
+  position: relative;
+}
+
+.options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  max-height: 16rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid currentColor;
+  background: var(--background, Canvas);
+}
+
+.options li {
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+
+.activeOption {
+  background: color-mix(in srgb, currentColor 15%, transparent);
+}
+
 .mediaRow {
   display: flex;
   gap: 0.5rem;

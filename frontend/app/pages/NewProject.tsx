@@ -1,11 +1,15 @@
 'use client'
 
-import { useState, FormEvent } from 'react'
+import { useEffect, useRef, useState, FormEvent, KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import majorJson from '../../resources/majors.json'
 import styles from './NewProject.module.css'
 
 const MAX_MEDIA = 5
+
+// Must match the projects_discipline_check constraint in the database
+const majorOptions: string[] = majorJson as string[]
 
 export default function NewProject() {
   const router = useRouter()
@@ -15,10 +19,70 @@ export default function NewProject() {
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [disciplineOpen, setDisciplineOpen] = useState(false)
+  const [activeDisciplineIndex, setActiveDisciplineIndex] = useState(-1)
+  const disciplinePickerRef = useRef<HTMLDivElement>(null)
+
+  const disciplineTerm = discipline.trim().toLowerCase()
+  const disciplineOptions = majorOptions.includes(discipline)
+    ? majorOptions
+    : majorOptions.filter((major) => major.toLowerCase().includes(disciplineTerm))
+
+  useEffect(() => {
+    if (!disciplineOpen) return
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!disciplinePickerRef.current?.contains(event.target as Node)) {
+        setDisciplineOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [disciplineOpen])
+
+  useEffect(() => {
+    if (!disciplineOpen || activeDisciplineIndex < 0) return
+    document
+      .getElementById(`discipline-option-${activeDisciplineIndex}`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [disciplineOpen, activeDisciplineIndex])
+
+  function selectDiscipline(major: string) {
+    setDiscipline(major)
+    setDisciplineOpen(false)
+    setActiveDisciplineIndex(-1)
+  }
+
+  function handleDisciplineKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      if (!disciplineOpen) {
+        setDisciplineOpen(true)
+        return
+      }
+      const step = event.key === 'ArrowDown' ? 1 : -1
+      const count = disciplineOptions.length
+      if (count > 0) setActiveDisciplineIndex((index) => (index + step + count) % count)
+    } else if (event.key === 'Enter' && disciplineOpen) {
+      // Pick the highlighted major instead of submitting the form
+      event.preventDefault()
+      const major = disciplineOptions[activeDisciplineIndex]
+      if (major) selectDiscipline(major)
+    } else if (event.key === 'Escape') {
+      setDisciplineOpen(false)
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+
+    if (!majorOptions.includes(discipline)) {
+      setError('Choose a discipline from the list.')
+      return
+    }
+
     setSaving(true)
 
     const supabase = createClient()
@@ -36,7 +100,7 @@ export default function NewProject() {
       owner_id: user.id,
       title: title.trim(),
       description: description.trim(),
-      discipline: discipline.trim(),
+      discipline,
       media: imageUrls
         .map((url) => url.trim())
         .filter(Boolean)
@@ -78,15 +142,58 @@ export default function NewProject() {
             required
           />
         </div>
-        <div className={styles.field}>
+        <div ref={disciplinePickerRef} className={`${styles.field} ${styles.combobox}`}>
           <label htmlFor="discipline">Discipline</label>
           <input
             id="discipline"
             type="text"
+            role="combobox"
+            aria-expanded={disciplineOpen}
+            aria-controls="discipline-options"
+            aria-autocomplete="list"
+            aria-activedescendant={
+              disciplineOpen && activeDisciplineIndex >= 0
+                ? `discipline-option-${activeDisciplineIndex}`
+                : undefined
+            }
+            placeholder="Search majors"
             value={discipline}
-            onChange={(event) => setDiscipline(event.target.value)}
+            onChange={(event) => {
+              setDiscipline(event.target.value)
+              setDisciplineOpen(true)
+              setActiveDisciplineIndex(0)
+            }}
+            onFocus={() => setDisciplineOpen(true)}
+            onBlur={(event) => {
+              const next = event.relatedTarget
+              if (next && !disciplinePickerRef.current?.contains(next)) setDisciplineOpen(false)
+            }}
+            onKeyDown={handleDisciplineKeyDown}
+            autoComplete="off"
             required
           />
+          {disciplineOpen && (
+            <ul id="discipline-options" role="listbox" className={styles.options}>
+              {disciplineOptions.map((major, index) => (
+                <li
+                  key={major}
+                  id={`discipline-option-${index}`}
+                  role="option"
+                  aria-selected={major === discipline}
+                  className={index === activeDisciplineIndex ? styles.activeOption : undefined}
+                  // mousedown, not click: keeps focus in the input
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    selectDiscipline(major)
+                  }}
+                  onMouseEnter={() => setActiveDisciplineIndex(index)}
+                >
+                  {major}
+                </li>
+              ))}
+              {disciplineOptions.length === 0 && <li>No matching majors.</li>}
+            </ul>
+          )}
         </div>
         <fieldset className={styles.field}>
           <legend>Images (up to {MAX_MEDIA})</legend>
