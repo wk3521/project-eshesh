@@ -40,6 +40,12 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
               <Link href={`/profile/${user.id}`} className="cursor-pointer">
                 {user.email}
               </Link>
+              <Link href="/explore" className="cursor-pointer">
+                Explore
+              </Link>
+              <Link href="/communities" className="cursor-pointer">
+                Communities
+              </Link>
               <Link href="/projects" className="cursor-pointer">
                 My projects
               </Link>

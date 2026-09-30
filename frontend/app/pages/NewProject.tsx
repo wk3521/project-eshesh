@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, FormEvent, KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import majorJson from '../../resources/majors.json'
 import styles from './NewProject.module.css'
@@ -11,11 +12,20 @@ const MAX_MEDIA = 5
 // Must match the projects_discipline_check constraint in the database
 const majorOptions: string[] = majorJson as string[]
 
-export default function NewProject() {
+export default function NewProject({
+  communities,
+  redirectTo = '/projects',
+  embedded = false,
+}: {
+  communities: { id: string; name: string }[]
+  redirectTo?: string
+  embedded?: boolean
+}) {
   const router = useRouter()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [discipline, setDiscipline] = useState('')
+  const [communityId, setCommunityId] = useState(communities[0]?.id ?? '')
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -98,6 +108,7 @@ export default function NewProject() {
 
     const { error } = await supabase.from('projects').insert({
       owner_id: user.id,
+      community_id: communityId,
       title: title.trim(),
       description: description.trim(),
       discipline,
@@ -114,14 +125,40 @@ export default function NewProject() {
       return
     }
 
-    router.push('/projects')
+    router.push(redirectTo)
     router.refresh()
   }
 
+  const Container = embedded ? 'div' : 'main'
+
+  if (communities.length === 0) {
+    return (
+      <Container className={styles.page}>
+        {!embedded && <h1>Create new project</h1>}
+        <p>
+          You need to join a community before posting a project. <Link href="/communities">Browse communities</Link>.
+        </p>
+      </Container>
+    )
+  }
+
   return (
-    <main className={styles.page}>
-      <h1>Create new project</h1>
+    <Container className={styles.page}>
+      {!embedded && <h1>Create new project</h1>}
       <form onSubmit={handleSubmit} className={styles.form}>
+        <div className={styles.field}>
+          <label htmlFor="community">Community</label>
+          <select
+            id="community"
+            value={communityId}
+            onChange={(event) => setCommunityId(event.target.value)}
+            required
+          >
+            {communities.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
         <div className={styles.field}>
           <label htmlFor="title">Title</label>
           <input
@@ -241,6 +278,6 @@ export default function NewProject() {
           {saving ? 'Saving...' : 'Save'}
         </button>
       </form>
-    </main>
+    </Container>
   )
 }

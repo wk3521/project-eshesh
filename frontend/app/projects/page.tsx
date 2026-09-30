@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-
-type MediaItem = { url: string; type?: 'image' | 'video' }
+import { timeAgo } from '@/lib/time'
+import { isVideo, type MediaItem } from '@/lib/media'
 
 type ProjectPost = {
   id: string
@@ -13,29 +13,6 @@ type ProjectPost = {
   media: MediaItem[] | null
   created_at: string
   project_skills: { skills: { name: string } | null }[]
-}
-
-function timeAgo(isoDate: string) {
-  const seconds = Math.floor((Date.now() - new Date(isoDate).getTime()) / 1000)
-  const steps: [number, string][] = [
-    [60, 's'],
-    [60, 'm'],
-    [24, 'h'],
-    [7, 'd'],
-    [4.345, 'w'],
-    [12, 'mo'],
-    [Infinity, 'y'],
-  ]
-  let value = seconds
-  for (const [unit, label] of steps) {
-    if (value < unit) return `${Math.max(1, Math.floor(value))}${label}`
-    value /= unit
-  }
-  return `${Math.floor(value)}y`
-}
-
-function isVideo(item: MediaItem) {
-  return item.type === 'video' || /\.(mp4|webm|mov)$/i.test(item.url)
 }
 
 export default async function ProjectsPage() {
