@@ -2,25 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { timeAgo } from '@/lib/time'
+import { fetchPendingRequests, fetchConversations, otherParticipant } from '@/lib/messaging'
 import MessageRequestActions from '@/app/components/MessageRequestActions'
-
-type Request = {
-  id: string
-  pitch: string | null
-  created_at: string
-  applicant_id: string
-  profiles: { full_name: string } | null
-  projects: { id: string; title: string } | null
-}
-
-type Conversation = {
-  id: string
-  created_at: string
-  user_a_id: string
-  user_b_id: string
-  a: { id: string; full_name: string } | null
-  b: { id: string; full_name: string } | null
-}
 
 export default async function MessagesPage() {
   const supabase = await createClient()
@@ -30,20 +13,10 @@ export default async function MessagesPage() {
 
   if (!user) redirect('/login')
 
-  const { data: requests } = await supabase
-    .from('applications')
-    .select('id, pitch, created_at, applicant_id, profiles!applications_applicant_id_fkey(full_name), projects!inner(id, title, owner_id)')
-    .eq('message_request_status', 'pending')
-    .eq('projects.owner_id', user.id)
-    .order('created_at', { ascending: false })
-    .returns<Request[]>()
-
-  const { data: conversations } = await supabase
-    .from('conversations')
-    .select('id, created_at, user_a_id, user_b_id, a:profiles!conversations_user_a_id_fkey(id, full_name), b:profiles!conversations_user_b_id_fkey(id, full_name)')
-    .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
-    .order('created_at', { ascending: false })
-    .returns<Conversation[]>()
+  const [{ data: requests }, { data: conversations }] = await Promise.all([
+    fetchPendingRequests(supabase, user.id),
+    fetchConversations(supabase, user.id),
+  ])
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-6">
@@ -78,18 +51,15 @@ export default async function MessagesPage() {
         <p className="mt-2 text-sm text-neutral-500">No conversations yet.</p>
       ) : (
         <div className="mt-3 flex flex-col gap-2">
-          {conversations.map((c) => {
-            const other = c.user_a_id === user.id ? c.b : c.a
-            return (
-              <Link
-                key={c.id}
-                href={`/messages/${c.id}`}
-                className="rounded-xl border border-neutral-200 p-4 transition-colors hover:border-neutral-400 dark:border-neutral-800 dark:hover:border-neutral-600"
-              >
-                {other?.full_name ?? 'Unknown'}
-              </Link>
-            )
-          })}
+          {conversations.map((c) => (
+            <Link
+              key={c.id}
+              href={`/messages/${c.id}`}
+              className="rounded-xl border border-neutral-200 p-4 transition-colors hover:border-neutral-400 dark:border-neutral-800 dark:hover:border-neutral-600"
+            >
+              {otherParticipant(c, user.id)?.full_name ?? 'Unknown'}
+            </Link>
+          ))}
         </div>
       )}
     </main>

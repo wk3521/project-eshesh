@@ -32,9 +32,15 @@ async function openConversationWith(otherUserId: string, userId: string) {
 export default function MessageRequestActions({
   applicationId,
   applicantId,
+  onAccepted,
+  onDeclined,
 }: {
   applicationId: string
   applicantId: string
+  // When provided, used instead of navigating — lets a caller (e.g. the
+  // floating ChatWidget) stay put and switch to the new conversation itself.
+  onAccepted?: (conversationId: string) => void
+  onDeclined?: () => void
 }) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
@@ -54,6 +60,7 @@ export default function MessageRequestActions({
         .eq('id', applicationId)
       setPending(false)
       if (error) setError(error.message)
+      else if (onDeclined) onDeclined()
       else router.refresh()
       return
     }
@@ -75,7 +82,8 @@ export default function MessageRequestActions({
       setError(updateError.message)
       return
     }
-    router.push(`/messages/${conversationId}`)
+    if (onAccepted) onAccepted(conversationId)
+    else router.push(`/messages/${conversationId}`)
   }
 
   return (
