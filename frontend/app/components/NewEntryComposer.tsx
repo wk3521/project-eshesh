@@ -34,7 +34,7 @@ export default function NewEntryComposer({
         {mode === 'project' ? (
           <NewProject communities={communities} redirectTo="/explore?type=projects" embedded />
         ) : (
-          <PostComposer communities={communities} presetCommunityId={presetCommunityId} redirectTo="/explore?type=posts" />
+          <PostComposer communities={communities} presetCommunityId={presetCommunityId} redirectTo="/explore?type=all" />
         )}
       </div>
     </div>
