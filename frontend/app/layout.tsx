@@ -33,36 +33,40 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <header className="flex items-start justify-between gap-4 p-4">
-          <UserSearch />
+        <header className="grid grid-cols-3 items-start gap-4 p-4">
+          <div />
+          <div className="flex justify-center">
+            <UserSearch />
+          </div>
           {user ? (
-            <div className="flex flex-col items-end gap-1">
+            <div className="flex flex-col items-end gap-1 justify-self-end">
               <Link href={`/profile/${user.id}`} className="cursor-pointer">
                 {user.email}
-              </Link>
-              <Link href="/explore" className="cursor-pointer">
-                Explore
-              </Link>
-              <Link href="/communities" className="cursor-pointer">
-                Communities
-              </Link>
-              <Link href="/projects" className="cursor-pointer">
-                My projects
-              </Link>
-              <Link href="/applications" className="cursor-pointer">
-                My applications
-              </Link>
-              <Link href="/notifications" className="cursor-pointer">
-                Notifications
               </Link>
               <LogoutButton />
             </div>
           ) : (
-            <Link href="/signup" className="cursor-pointer">
+            <Link href="/signup" className="cursor-pointer justify-self-end">
               Sign up
             </Link>
           )}
         </header>
+        {user && (
+          <nav className="flex justify-center gap-6 border-b border-neutral-200 py-3 dark:border-neutral-800">
+            <Link href="/explore" className="cursor-pointer">
+              Explore
+            </Link>
+            <Link href="/projects" className="cursor-pointer">
+              My projects
+            </Link>
+            <Link href="/applications" className="cursor-pointer">
+              My applications
+            </Link>
+            <Link href="/notifications" className="cursor-pointer">
+              Notifications
+            </Link>
+          </nav>
+        )}
         {children}
       </body>
     </html>
