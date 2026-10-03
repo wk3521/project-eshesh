@@ -41,6 +41,11 @@
   max-width: 480px;
 }
 
+.followRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .imageField {
   display: flex;
   flex-direction: column;

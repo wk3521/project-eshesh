@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { escapeLike } from '@/lib/search'
 import ResumePreview from './ResumePreview'
+import { fileExtension } from '@/lib/upload'
 import styles from '../pages/Profile.module.css'
 
 export type ProfileRow = {
@@ -96,11 +97,6 @@ const uploads: Record<
 const uploadKinds = Object.keys(uploads) as UploadKind[]
 
 const noUploads: Record<UploadKind, null> = { avatar: null, background: null, resume: null }
-
-function fileExtension(name: string) {
-  const dot = name.lastIndexOf('.')
-  return dot >= 0 ? name.slice(dot).toLowerCase() : ''
-}
 
 // Some systems report an empty type for .docx files, so fall back to the extension
 function isAccepted(kind: UploadKind, file: File) {
