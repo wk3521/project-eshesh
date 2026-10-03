@@ -40,9 +40,16 @@ export default function ApplyButton({
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
+    const trimmedPitch = pitch.trim()
     const { error } = await supabase
       .from('applications')
-      .insert({ project_id: projectId, applicant_id: user.id, pitch: pitch.trim() || null })
+      .insert({
+        project_id: projectId,
+        applicant_id: user.id,
+        pitch: trimmedPitch || null,
+        // A pitch doubles as a message request to the project owner
+        message_request_status: trimmedPitch ? 'pending' : null,
+      })
 
     setSubmitting(false)
 
