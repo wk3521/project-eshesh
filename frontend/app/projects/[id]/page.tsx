@@ -1,9 +1,11 @@
+import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { timeAgo } from '@/lib/time'
 import { type MediaItem } from '@/lib/media'
 import ResumePreview from '@/app/components/ResumePreview'
 import ImageCarousel from '@/app/components/ImageCarousel'
+import MessageRequestActions from '@/app/components/MessageRequestActions'
 
 type ProjectDetail = {
   id: string
@@ -21,8 +23,10 @@ type ProjectDetail = {
 
 type Applicant = {
   id: string
+  applicant_id: string
   pitch: string | null
   status: string | null
+  message_request_status: string | null
   created_at: string
   profiles: { full_name: string; major: string | null; school: string | null; resume_path: string | null } | null
 }
@@ -52,14 +56,24 @@ export default async function ProjectDetailPage({
   const isOwner = project.owner_id === user.id
 
   let applicants: Applicant[] = []
+  const conversationIdByUser = new Map<string, string>()
   if (isOwner) {
     const { data } = await supabase
       .from('applications')
-      .select('id, pitch, status, created_at, profiles!applications_applicant_id_fkey(full_name, major, school, resume_path)')
+      .select('id, applicant_id, pitch, status, message_request_status, created_at, profiles!applications_applicant_id_fkey(full_name, major, school, resume_path)')
       .eq('project_id', id)
       .order('created_at', { ascending: false })
       .returns<Applicant[]>()
     applicants = data ?? []
+
+    const { data: conversations } = await supabase
+      .from('conversations')
+      .select('id, user_a_id, user_b_id')
+      .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
+    for (const c of conversations ?? []) {
+      const otherId = c.user_a_id === user.id ? c.user_b_id : c.user_a_id
+      conversationIdByUser.set(otherId, c.id)
+    }
   }
 
   return (
@@ -138,6 +152,21 @@ export default async function ProjectDetailPage({
                       <p className="text-sm text-neutral-400">No resume uploaded.</p>
                     )}
                   </div>
+                  {a.message_request_status === 'pending' && (
+                    <div className="mt-3">
+                      <MessageRequestActions applicationId={a.id} applicantId={a.applicant_id} />
+                    </div>
+                  )}
+                  {a.message_request_status === 'accepted' && conversationIdByUser.has(a.applicant_id) && (
+                    <div className="mt-3">
+                      <Link href={`/messages/${conversationIdByUser.get(a.applicant_id)}`} className="text-sm underline">
+                        Message
+                      </Link>
+                    </div>
+                  )}
+                  {a.message_request_status === 'declined' && (
+                    <p className="mt-3 text-sm text-neutral-400">Message request declined.</p>
+                  )}
                 </div>
               ))}
             </div>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/app/components/LogoutButton";
 import UserSearch from "@/app/components/UserSearch";
+import ChatWidget from "@/app/components/ChatWidget";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -68,6 +69,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           </nav>
         )}
         {children}
+        {user && <ChatWidget userId={user.id} />}
       </body>
     </html>
   );
