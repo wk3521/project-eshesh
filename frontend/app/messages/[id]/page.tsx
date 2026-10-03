@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { timeAgo } from '@/lib/time'
 import MessageComposer from '@/app/components/MessageComposer'
+import MessageThread from '@/app/components/MessageThread'
 
 type Conversation = {
   id: string
@@ -54,22 +54,8 @@ export default async function ConversationPage({
     <main className="mx-auto w-full max-w-2xl px-4 py-6">
       <h1 className="text-xl font-bold">{other?.full_name ?? 'Unknown'}</h1>
 
-      <div className="mt-6 flex flex-col gap-3">
-        {(messages ?? []).length === 0 ? (
-          <p className="text-center text-sm text-neutral-500">Say hello.</p>
-        ) : (
-          messages!.map((m) => {
-            const mine = m.sender_id === user.id
-            return (
-              <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[75%] rounded-xl px-3 py-2 text-sm ${mine ? 'bg-neutral-800 text-white dark:bg-neutral-200 dark:text-neutral-900' : 'border border-neutral-200 dark:border-neutral-800'}`}>
-                  <p className="whitespace-pre-wrap">{m.content}</p>
-                  <p className={`mt-1 text-xs ${mine ? 'text-neutral-300 dark:text-neutral-600' : 'text-neutral-400'}`}>{timeAgo(m.created_at)} ago</p>
-                </div>
-              </div>
-            )
-          })
-        )}
+      <div className="mt-6">
+        <MessageThread conversationId={id} initialMessages={messages ?? []} userId={user.id} />
       </div>
 
       <MessageComposer conversationId={id} />

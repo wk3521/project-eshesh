@@ -1,11 +1,9 @@
 'use client'
 
 import { FormEvent, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function MessageComposer({ conversationId }: { conversationId: string }) {
-  const router = useRouter()
   const [content, setContent] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
@@ -31,7 +29,6 @@ export default function MessageComposer({ conversationId }: { conversationId: st
       return
     }
     setContent('')
-    router.refresh()
   }
 
   return (
