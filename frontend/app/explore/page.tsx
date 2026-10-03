@@ -192,7 +192,7 @@ export default async function ExplorePage({
               item.kind === 'post' ? (
                 <PostCard key={`post-${item.data.id}`} post={item.data} userId={user.id} activeCommunity={activeCommunity} pageHref={pageHref} />
               ) : (
-                <ProjectCard key={`project-${item.data.id}`} project={item.data} userId={user.id} activeCommunity={activeCommunity} pageHref={pageHref} />
+                <ProjectCard key={`project-${item.data.id}`} project={item.data} userId={user.id} activeCommunity={activeCommunity} />
               )
             )}
           </div>
@@ -243,67 +243,60 @@ function ProjectCard({
   project,
   userId,
   activeCommunity,
-  pageHref,
 }: {
   project: Project
   userId: string
   activeCommunity: Community | null
-  pageHref: (overrides: { community?: string | null }) => string
 }) {
   const cover = project.media?.[0]
   const applied = project.applications.some((a) => a.applicant_id === userId)
   return (
     <article className="overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800">
-      {cover && (
-        <div className="flex aspect-video items-center justify-center bg-neutral-100 dark:bg-neutral-900">
-          {isVideo(cover) ? (
-            <video src={cover.url} className="h-full w-full object-cover" muted playsInline preload="metadata" />
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={cover.url} alt="" className="h-full w-full object-cover" />
-          )}
-        </div>
-      )}
-      <div className="flex flex-col gap-3 p-4">
-        <div className="flex items-center gap-2 text-sm text-neutral-500">
-          <span className="font-medium text-neutral-900 dark:text-neutral-100">
-            {project.profiles?.full_name ?? 'Unknown'}
-          </span>
-          {!activeCommunity && project.communities && (
-            <>
-              <span>·</span>
-              <Link href={pageHref({ community: project.communities.slug })} className="hover:underline">
-                {project.communities.name}
-              </Link>
-            </>
-          )}
-          <span>·</span>
-          <span>{timeAgo(project.created_at)} ago</span>
-        </div>
-
-        <div>
-          <p className="font-semibold">{project.title}</p>
-          {project.discipline && <p className="text-sm text-neutral-500">{project.discipline}</p>}
-        </div>
-
-        <p className="text-sm text-neutral-700 dark:text-neutral-300">{project.description}</p>
-
-        {project.project_skills.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {project.project_skills.map((ps) => ps.skills && (
-              <span key={ps.skills.name} className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-                {ps.skills.name}
-              </span>
-            ))}
+      <Link href={`/projects/${project.id}`} className="block">
+        {cover && (
+          <div className="flex aspect-video items-center justify-center bg-neutral-100 dark:bg-neutral-900">
+            {isVideo(cover) ? (
+              <video src={cover.url} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={cover.url} alt="" className="h-full w-full object-cover" />
+            )}
           </div>
         )}
+        <div className="flex flex-col gap-3 p-4">
+          <div className="flex items-center gap-2 text-sm text-neutral-500">
+            <span className="font-medium text-neutral-900 dark:text-neutral-100">
+              {project.profiles?.full_name ?? 'Unknown'}
+            </span>
+            {!activeCommunity && project.communities && <span>· {project.communities.name}</span>}
+            <span>·</span>
+            <span>{timeAgo(project.created_at)} ago</span>
+          </div>
 
-        <div className="flex items-center justify-between border-t border-neutral-200 pt-3 dark:border-neutral-800">
-          <span className="text-sm text-neutral-500">{project.applications.length} interested</span>
-          {project.owner_id !== userId && (
-            <ApplyButton projectId={project.id} initialApplied={applied} />
+          <div>
+            <p className="font-semibold">{project.title}</p>
+            {project.discipline && <p className="text-sm text-neutral-500">{project.discipline}</p>}
+          </div>
+
+          <p className="text-sm text-neutral-700 dark:text-neutral-300">{project.description}</p>
+
+          {project.project_skills.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {project.project_skills.map((ps) => ps.skills && (
+                <span key={ps.skills.name} className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+                  {ps.skills.name}
+                </span>
+              ))}
+            </div>
           )}
         </div>
+      </Link>
+
+      <div className="flex items-center justify-between border-t border-neutral-200 p-4 pt-3 dark:border-neutral-800">
+        <span className="text-sm text-neutral-500">{project.applications.length} interested</span>
+        {project.owner_id !== userId && (
+          <ApplyButton projectId={project.id} initialApplied={applied} />
+        )}
       </div>
     </article>
   )

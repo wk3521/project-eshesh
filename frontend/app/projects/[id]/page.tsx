@@ -1,8 +1,9 @@
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { timeAgo } from '@/lib/time'
-import { isVideo, type MediaItem } from '@/lib/media'
+import { type MediaItem } from '@/lib/media'
 import ResumePreview from '@/app/components/ResumePreview'
+import ImageCarousel from '@/app/components/ImageCarousel'
 
 type ProjectDetail = {
   id: string
@@ -87,15 +88,8 @@ export default async function ProjectDetailPage({
       {project.discipline && <p className="mt-2 text-sm text-neutral-500">{project.discipline}</p>}
 
       {project.media && project.media.length > 0 && (
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          {project.media.map((item, index) =>
-            isVideo(item) ? (
-              <video key={index} src={item.url} className="aspect-video w-full rounded-lg object-cover" muted playsInline preload="metadata" controls />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={index} src={item.url} alt="" className="aspect-video w-full rounded-lg object-cover" />
-            )
-          )}
+        <div className="mt-4">
+          <ImageCarousel media={project.media} />
         </div>
       )}
 
