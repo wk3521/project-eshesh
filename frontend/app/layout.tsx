@@ -49,6 +49,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
               <Link href="/projects" className="cursor-pointer">
                 My projects
               </Link>
+              <Link href="/applications" className="cursor-pointer">
+                My applications
+              </Link>
               <LogoutButton />
             </div>
           ) : (
