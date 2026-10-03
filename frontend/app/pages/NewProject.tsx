@@ -4,10 +4,12 @@ import { useEffect, useRef, useState, FormEvent, KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { fileExtension } from '@/lib/upload'
 import majorJson from '../../resources/majors.json'
 import styles from './NewProject.module.css'
 
 const MAX_MEDIA = 5
+const MEDIA_BUCKET = 'project-media'
 
 // Must match the projects_discipline_check constraint in the database
 const majorOptions: string[] = majorJson as string[]
@@ -26,7 +28,7 @@ export default function NewProject({
   const [description, setDescription] = useState('')
   const [discipline, setDiscipline] = useState('')
   const [communityId, setCommunityId] = useState(communities[0]?.id ?? '')
-  const [imageUrls, setImageUrls] = useState<string[]>([])
+  const [imageFiles, setImageFiles] = useState<File[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [disciplineOpen, setDisciplineOpen] = useState(false)
@@ -106,21 +108,35 @@ export default function NewProject({
       return
     }
 
+    const uploadedPaths: string[] = []
+    const media: { type: 'image'; url: string }[] = []
+
+    for (const [index, file] of imageFiles.entries()) {
+      const path = `${user.id}/${Date.now()}-${index}${fileExtension(file.name)}`
+      const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET).upload(path, file, { contentType: file.type })
+      if (uploadError) {
+        await supabase.storage.from(MEDIA_BUCKET).remove(uploadedPaths)
+        setSaving(false)
+        setError(uploadError.message)
+        return
+      }
+      uploadedPaths.push(path)
+      media.push({ type: 'image', url: supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl })
+    }
+
     const { error } = await supabase.from('projects').insert({
       owner_id: user.id,
       community_id: communityId,
       title: title.trim(),
       description: description.trim(),
       discipline,
-      media: imageUrls
-        .map((url) => url.trim())
-        .filter(Boolean)
-        .map((url) => ({ type: 'image', url })),
+      media,
     })
 
     setSaving(false)
 
     if (error) {
+      await supabase.storage.from(MEDIA_BUCKET).remove(uploadedPaths)
       setError(error.message)
       return
     }
@@ -234,39 +250,31 @@ export default function NewProject({
         </div>
         <fieldset className={styles.field}>
           <legend>Images (up to {MAX_MEDIA})</legend>
-          {imageUrls.map((url, index) => (
+          {imageFiles.map((file, index) => (
             <div key={index} className={styles.mediaRow}>
-              <input
-                type="url"
-                aria-label={`Image URL ${index + 1}`}
-                placeholder="https://example.com/image.png"
-                value={url}
-                onChange={(event) =>
-                  setImageUrls((prev) =>
-                    prev.map((u, i) => (i === index ? event.target.value : u))
-                  )
-                }
-                required
-              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={URL.createObjectURL(file)} alt="" width={60} height={60} style={{ objectFit: 'cover' }} />
+              <span>{file.name}</span>
               <button
                 type="button"
                 className={styles.button}
-                onClick={() =>
-                  setImageUrls((prev) => prev.filter((_, i) => i !== index))
-                }
+                onClick={() => setImageFiles((prev) => prev.filter((_, i) => i !== index))}
               >
                 Remove
               </button>
             </div>
           ))}
-          {imageUrls.length < MAX_MEDIA && (
-            <button
-              type="button"
-              className={styles.button}
-              onClick={() => setImageUrls((prev) => [...prev, ''])}
-            >
-              Add image link
-            </button>
+          {imageFiles.length < MAX_MEDIA && (
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(event) => {
+                const picked = Array.from(event.target.files ?? [])
+                setImageFiles((prev) => [...prev, ...picked].slice(0, MAX_MEDIA))
+                event.target.value = ''
+              }}
+            />
           )}
         </fieldset>
         {error && (
