@@ -3,12 +3,12 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { timeAgo } from '@/lib/time'
 import { isVideo, type MediaItem } from '@/lib/media'
+import { PROJECT_LABELS_SELECT, disciplineNames, tagNames, type ProjectLabels } from '@/lib/projects'
 
-type ProjectPost = {
+type ProjectPost = ProjectLabels & {
   id: string
   title: string
   description: string
-  discipline: string | null
   status: string | null
   media: MediaItem[] | null
   created_at: string
@@ -25,7 +25,7 @@ export default async function ProjectsPage() {
 
   const { data: projects, error } = await supabase
     .from('projects')
-    .select('id, title, description, discipline, status, media, created_at, project_skills(skills(name))')
+    .select(`id, title, description, status, media, created_at, project_skills(skills(name)), ${PROJECT_LABELS_SELECT}`)
     .eq('owner_id', user.id)
     .order('created_at', { ascending: false })
     .returns<ProjectPost[]>()
@@ -54,6 +54,8 @@ export default async function ProjectsPage() {
         <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
           {projects.map((project) => {
             const cover = project.media?.[0]
+            const disciplines = disciplineNames(project)
+            const tags = tagNames(project)
 
             return (
               <Link
@@ -90,8 +92,8 @@ export default async function ProjectsPage() {
                         </span>
                       )}
                     </div>
-                    {project.discipline && (
-                      <p className="text-sm text-neutral-500">{project.discipline}</p>
+                    {disciplines.length > 0 && (
+                      <p className="text-sm text-neutral-500">{disciplines.join(' · ')}</p>
                     )}
                   </div>
 
@@ -99,8 +101,13 @@ export default async function ProjectsPage() {
                     {project.description}
                   </p>
 
-                  {project.project_skills.length > 0 && (
+                  {(tags.length > 0 || project.project_skills.length > 0) && (
                     <div className="flex flex-wrap gap-1.5">
+                      {tags.map((tag) => (
+                        <span key={tag} className="rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
+                          {tag}
+                        </span>
+                      ))}
                       {project.project_skills.map(
                         (ps) =>
                           ps.skills && (

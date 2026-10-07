@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { timeAgo } from '@/lib/time'
 import { isVideo, type MediaItem } from '@/lib/media'
+import { PROJECT_LABELS_SELECT, disciplineNames, tagNames, type ProjectLabels } from '@/lib/projects'
 import JoinButton from '@/app/components/JoinButton'
 import LikeButton from '@/app/components/LikeButton'
 import ApplyButton from '@/app/components/ApplyButton'
@@ -19,11 +20,10 @@ type Post = {
   post_likes: { profile_id: string }[]
 }
 
-type Project = {
+type Project = ProjectLabels & {
   id: string
   title: string
   description: string
-  discipline: string | null
   media: MediaItem[] | null
   created_at: string
   owner_id: string
@@ -68,7 +68,7 @@ export default async function ExplorePage({
   if (communities.length > 0) {
     const { data: projectsData, error: projectsError } = await supabase
       .from('projects')
-      .select('id, title, description, discipline, media, created_at, owner_id, profiles!projects_owner_id_fkey(full_name), communities(slug, name), project_skills(skills(name)), applications(applicant_id)')
+      .select(`id, title, description, media, created_at, owner_id, profiles!projects_owner_id_fkey(full_name), communities(slug, name), project_skills(skills(name)), applications(applicant_id), ${PROJECT_LABELS_SELECT}`)
       .in('community_id', communityIds)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -250,6 +250,8 @@ function ProjectCard({
 }) {
   const cover = project.media?.[0]
   const applied = project.applications.some((a) => a.applicant_id === userId)
+  const disciplines = disciplineNames(project)
+  const tags = tagNames(project)
   return (
     <article className="overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800">
       <Link href={`/projects/${project.id}`} className="block">
@@ -275,13 +277,18 @@ function ProjectCard({
 
           <div>
             <p className="font-semibold">{project.title}</p>
-            {project.discipline && <p className="text-sm text-neutral-500">{project.discipline}</p>}
+            {disciplines.length > 0 && <p className="text-sm text-neutral-500">{disciplines.join(' · ')}</p>}
           </div>
 
           <p className="text-sm text-neutral-700 dark:text-neutral-300">{project.description}</p>
 
-          {project.project_skills.length > 0 && (
+          {(tags.length > 0 || project.project_skills.length > 0) && (
             <div className="flex flex-wrap gap-1.5">
+              {tags.map((tag) => (
+                <span key={tag} className="rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
+                  {tag}
+                </span>
+              ))}
               {project.project_skills.map((ps) => ps.skills && (
                 <span key={ps.skills.name} className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
                   {ps.skills.name}

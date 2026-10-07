@@ -1,18 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState, FormEvent, KeyboardEvent } from 'react'
+import { useEffect, useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { fileExtension } from '@/lib/upload'
-import majorJson from '../../resources/majors.json'
+import MultiSelect, { Option } from '@/app/components/MultiSelect'
 import styles from './NewProject.module.css'
 
 const MAX_MEDIA = 5
 const MEDIA_BUCKET = 'project-media'
-
-// Must match the projects_discipline_check constraint in the database
-const majorOptions: string[] = majorJson as string[]
 
 export default function NewProject({
   communities,
@@ -26,75 +23,24 @@ export default function NewProject({
   const router = useRouter()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [discipline, setDiscipline] = useState('')
+  const [disciplineIds, setDisciplineIds] = useState<number[]>([])
+  const [tagIds, setTagIds] = useState<number[]>([])
+  const [disciplineOptions, setDisciplineOptions] = useState<Option[]>([])
+  const [tagOptions, setTagOptions] = useState<Option[]>([])
   const [communityId, setCommunityId] = useState(communities[0]?.id ?? '')
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [disciplineOpen, setDisciplineOpen] = useState(false)
-  const [activeDisciplineIndex, setActiveDisciplineIndex] = useState(-1)
-  const disciplinePickerRef = useRef<HTMLDivElement>(null)
-
-  const disciplineTerm = discipline.trim().toLowerCase()
-  const disciplineOptions = majorOptions.includes(discipline)
-    ? majorOptions
-    : majorOptions.filter((major) => major.toLowerCase().includes(disciplineTerm))
 
   useEffect(() => {
-    if (!disciplineOpen) return
-
-    function handlePointerDown(event: PointerEvent) {
-      if (!disciplinePickerRef.current?.contains(event.target as Node)) {
-        setDisciplineOpen(false)
-      }
-    }
-
-    document.addEventListener('pointerdown', handlePointerDown)
-    return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [disciplineOpen])
-
-  useEffect(() => {
-    if (!disciplineOpen || activeDisciplineIndex < 0) return
-    document
-      .getElementById(`discipline-option-${activeDisciplineIndex}`)
-      ?.scrollIntoView({ block: 'nearest' })
-  }, [disciplineOpen, activeDisciplineIndex])
-
-  function selectDiscipline(major: string) {
-    setDiscipline(major)
-    setDisciplineOpen(false)
-    setActiveDisciplineIndex(-1)
-  }
-
-  function handleDisciplineKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault()
-      if (!disciplineOpen) {
-        setDisciplineOpen(true)
-        return
-      }
-      const step = event.key === 'ArrowDown' ? 1 : -1
-      const count = disciplineOptions.length
-      if (count > 0) setActiveDisciplineIndex((index) => (index + step + count) % count)
-    } else if (event.key === 'Enter' && disciplineOpen) {
-      // Pick the highlighted major instead of submitting the form
-      event.preventDefault()
-      const major = disciplineOptions[activeDisciplineIndex]
-      if (major) selectDiscipline(major)
-    } else if (event.key === 'Escape') {
-      setDisciplineOpen(false)
-    }
-  }
+    const supabase = createClient()
+    supabase.from('disciplines').select('id, name').order('name').then(({ data }) => setDisciplineOptions(data ?? []))
+    supabase.from('tags').select('id, name').order('name').then(({ data }) => setTagOptions(data ?? []))
+  }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
-
-    if (!majorOptions.includes(discipline)) {
-      setError('Choose a discipline from the list.')
-      return
-    }
-
     setSaving(true)
 
     const supabase = createClient()
@@ -124,22 +70,49 @@ export default function NewProject({
       media.push({ type: 'image', url: supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl })
     }
 
-    const { error } = await supabase.from('projects').insert({
-      owner_id: user.id,
-      community_id: communityId,
-      title: title.trim(),
-      description: description.trim(),
-      discipline,
-      media,
-    })
-
-    setSaving(false)
+    const { data: project, error } = await supabase
+      .from('projects')
+      .insert({
+        owner_id: user.id,
+        community_id: communityId,
+        title: title.trim(),
+        description: description.trim(),
+        media,
+      })
+      .select('id')
+      .single()
 
     if (error) {
       await supabase.storage.from(MEDIA_BUCKET).remove(uploadedPaths)
+      setSaving(false)
       setError(error.message)
       return
     }
+
+    const [{ error: disciplineError }, { error: tagError }] = await Promise.all([
+      disciplineIds.length > 0
+        ? supabase
+            .from('project_discipline')
+            .insert(disciplineIds.map((discipline_id) => ({ project_id: project.id, discipline_id })))
+        : { error: null },
+      tagIds.length > 0
+        ? supabase.from('project_tag').insert(tagIds.map((tag_id) => ({ project_id: project.id, tag_id })))
+        : { error: null },
+    ])
+
+    const joinError = disciplineError ?? tagError
+    if (joinError) {
+      // Undo the whole save so a retry doesn't leave a duplicate project behind
+      await supabase.from('project_discipline').delete().eq('project_id', project.id)
+      await supabase.from('project_tag').delete().eq('project_id', project.id)
+      await supabase.from('projects').delete().eq('id', project.id)
+      await supabase.storage.from(MEDIA_BUCKET).remove(uploadedPaths)
+      setSaving(false)
+      setError(joinError.message)
+      return
+    }
+
+    setSaving(false)
 
     router.push(redirectTo)
     router.refresh()
@@ -195,59 +168,22 @@ export default function NewProject({
             required
           />
         </div>
-        <div ref={disciplinePickerRef} className={`${styles.field} ${styles.combobox}`}>
-          <label htmlFor="discipline">Discipline</label>
-          <input
-            id="discipline"
-            type="text"
-            role="combobox"
-            aria-expanded={disciplineOpen}
-            aria-controls="discipline-options"
-            aria-autocomplete="list"
-            aria-activedescendant={
-              disciplineOpen && activeDisciplineIndex >= 0
-                ? `discipline-option-${activeDisciplineIndex}`
-                : undefined
-            }
-            placeholder="Search majors"
-            value={discipline}
-            onChange={(event) => {
-              setDiscipline(event.target.value)
-              setDisciplineOpen(true)
-              setActiveDisciplineIndex(0)
-            }}
-            onFocus={() => setDisciplineOpen(true)}
-            onBlur={(event) => {
-              const next = event.relatedTarget
-              if (next && !disciplinePickerRef.current?.contains(next)) setDisciplineOpen(false)
-            }}
-            onKeyDown={handleDisciplineKeyDown}
-            autoComplete="off"
-            required
-          />
-          {disciplineOpen && (
-            <ul id="discipline-options" role="listbox" className={styles.options}>
-              {disciplineOptions.map((major, index) => (
-                <li
-                  key={major}
-                  id={`discipline-option-${index}`}
-                  role="option"
-                  aria-selected={major === discipline}
-                  className={index === activeDisciplineIndex ? styles.activeOption : undefined}
-                  // mousedown, not click: keeps focus in the input
-                  onMouseDown={(event) => {
-                    event.preventDefault()
-                    selectDiscipline(major)
-                  }}
-                  onMouseEnter={() => setActiveDisciplineIndex(index)}
-                >
-                  {major}
-                </li>
-              ))}
-              {disciplineOptions.length === 0 && <li>No matching majors.</li>}
-            </ul>
-          )}
-        </div>
+        <MultiSelect
+          id="disciplines"
+          label="Disciplines"
+          options={disciplineOptions}
+          selected={disciplineIds}
+          onChange={setDisciplineIds}
+          placeholder="Search majors"
+        />
+        <MultiSelect
+          id="tags"
+          label="Tags"
+          options={tagOptions}
+          selected={tagIds}
+          onChange={setTagIds}
+          placeholder="Search tags"
+        />
         <fieldset className={styles.field}>
           <legend>Images (up to {MAX_MEDIA})</legend>
           {imageFiles.map((file, index) => (

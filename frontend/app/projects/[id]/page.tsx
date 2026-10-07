@@ -3,15 +3,15 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { timeAgo } from '@/lib/time'
 import { type MediaItem } from '@/lib/media'
+import { PROJECT_LABELS_SELECT, disciplineNames, tagNames, type ProjectLabels } from '@/lib/projects'
 import ResumePreview from '@/app/components/ResumePreview'
 import ImageCarousel from '@/app/components/ImageCarousel'
 import MessageRequestActions from '@/app/components/MessageRequestActions'
 
-type ProjectDetail = {
+type ProjectDetail = ProjectLabels & {
   id: string
   title: string
   description: string
-  discipline: string | null
   status: string | null
   media: MediaItem[] | null
   created_at: string
@@ -46,7 +46,7 @@ export default async function ProjectDetailPage({
 
   const { data: project } = await supabase
     .from('projects')
-    .select('id, title, description, discipline, status, media, created_at, owner_id, profiles!projects_owner_id_fkey(full_name), communities(name), project_skills(skills(name))')
+    .select(`id, title, description, status, media, created_at, owner_id, profiles!projects_owner_id_fkey(full_name), communities(name), project_skills(skills(name)), ${PROJECT_LABELS_SELECT}`)
     .eq('id', id)
     .maybeSingle()
     .returns<ProjectDetail>()
@@ -54,6 +54,8 @@ export default async function ProjectDetailPage({
   if (!project) notFound()
 
   const isOwner = project.owner_id === user.id
+  const disciplines = disciplineNames(project)
+  const tags = tagNames(project)
 
   let applicants: Applicant[] = []
   const conversationIdByUser = new Map<string, string>()
@@ -99,7 +101,7 @@ export default async function ProjectDetailPage({
         <span>{timeAgo(project.created_at)} ago</span>
       </div>
 
-      {project.discipline && <p className="mt-2 text-sm text-neutral-500">{project.discipline}</p>}
+      {disciplines.length > 0 && <p className="mt-2 text-sm text-neutral-500">{disciplines.join(' · ')}</p>}
 
       {project.media && project.media.length > 0 && (
         <div className="mt-4">
@@ -109,8 +111,13 @@ export default async function ProjectDetailPage({
 
       <p className="mt-4 whitespace-pre-wrap text-sm text-neutral-700 dark:text-neutral-300">{project.description}</p>
 
-      {project.project_skills.length > 0 && (
+      {(tags.length > 0 || project.project_skills.length > 0) && (
         <div className="mt-4 flex flex-wrap gap-1.5">
+          {tags.map((tag) => (
+            <span key={tag} className="rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
+              {tag}
+            </span>
+          ))}
           {project.project_skills.map((ps) => ps.skills && (
             <span key={ps.skills.name} className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
               {ps.skills.name}

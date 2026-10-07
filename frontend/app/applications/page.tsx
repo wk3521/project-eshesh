@@ -2,19 +2,19 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { timeAgo } from '@/lib/time'
+import { PROJECT_LABELS_SELECT, disciplineNames, tagNames, type ProjectLabels } from '@/lib/projects'
 
 type Application = {
   id: string
   pitch: string | null
   status: string | null
   created_at: string
-  projects: {
+  projects: (ProjectLabels & {
     id: string
     title: string
-    discipline: string | null
     communities: { name: string } | null
     profiles: { full_name: string } | null
-  } | null
+  }) | null
 }
 
 export default async function MyApplicationsPage() {
@@ -27,7 +27,7 @@ export default async function MyApplicationsPage() {
 
   const { data: applications, error } = await supabase
     .from('applications')
-    .select('id, pitch, status, created_at, projects(id, title, discipline, communities(name), profiles!projects_owner_id_fkey(full_name))')
+    .select(`id, pitch, status, created_at, projects(id, title, communities(name), profiles!projects_owner_id_fkey(full_name), ${PROJECT_LABELS_SELECT})`)
     .eq('applicant_id', user.id)
     .order('created_at', { ascending: false })
     .returns<Application[]>()
@@ -62,6 +62,18 @@ export default async function MyApplicationsPage() {
               <p className="text-sm text-neutral-500">
                 {[a.projects?.profiles?.full_name, a.projects?.communities?.name].filter(Boolean).join(' · ')}
               </p>
+              {a.projects && disciplineNames(a.projects).length > 0 && (
+                <p className="text-sm text-neutral-500">{disciplineNames(a.projects).join(' · ')}</p>
+              )}
+              {a.projects && tagNames(a.projects).length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {tagNames(a.projects).map((tag) => (
+                    <span key={tag} className="rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
               {a.pitch && <p className="text-sm text-neutral-700 dark:text-neutral-300">{a.pitch}</p>}
               <p className="text-sm text-neutral-400">Applied {timeAgo(a.created_at)} ago</p>
             </Link>
