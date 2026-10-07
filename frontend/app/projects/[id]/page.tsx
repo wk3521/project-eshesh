@@ -82,11 +82,21 @@ export default async function ProjectDetailPage({
     <main className="mx-auto w-full max-w-2xl px-4 py-6">
       <div className="flex items-start justify-between gap-2">
         <h1 className="text-xl font-bold">{project.title}</h1>
-        {project.status && (
-          <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-            {project.status}
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {project.status && (
+            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+              {project.status}
+            </span>
+          )}
+          {isOwner && (
+            <Link
+              href={`/projects/${project.id}/edit`}
+              className="rounded-full border border-neutral-300 px-3 py-1 text-sm text-neutral-600 hover:border-neutral-500 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-neutral-500"
+            >
+              Edit
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="mt-1 flex items-center gap-2 text-sm text-neutral-500">

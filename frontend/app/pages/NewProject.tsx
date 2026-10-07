@@ -5,30 +5,58 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { fileExtension } from '@/lib/upload'
+import { isVideo, type MediaItem } from '@/lib/media'
 import MultiSelect, { Option } from '@/app/components/MultiSelect'
 import styles from './NewProject.module.css'
 
 const MAX_MEDIA = 5
 const MEDIA_BUCKET = 'project-media'
 
+export type EditableProject = {
+  id: string
+  communityId: string | null
+  title: string
+  description: string
+  media: MediaItem[]
+  disciplineIds: number[]
+  tagIds: number[]
+}
+
+// Storage path of an uploaded file, from its public URL; null for media that
+// isn't in our bucket (e.g. older pasted URLs)
+function mediaPath(url: string) {
+  const marker = `/object/public/${MEDIA_BUCKET}/`
+  const at = url.indexOf(marker)
+  return at >= 0 ? decodeURIComponent(url.slice(at + marker.length)) : null
+}
+
+function onlyIn(ids: number[], others: number[]) {
+  return ids.filter((id) => !others.includes(id))
+}
+
 export default function NewProject({
   communities,
   redirectTo = '/projects',
   embedded = false,
+  project,
 }: {
   communities: { id: string; name: string }[]
   redirectTo?: string
   embedded?: boolean
+  // Passed when editing: prefills the form and saves over this project
+  project?: EditableProject
 }) {
   const router = useRouter()
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [disciplineIds, setDisciplineIds] = useState<number[]>([])
-  const [tagIds, setTagIds] = useState<number[]>([])
+  const [title, setTitle] = useState(project?.title ?? '')
+  const [description, setDescription] = useState(project?.description ?? '')
+  const [disciplineIds, setDisciplineIds] = useState<number[]>(project?.disciplineIds ?? [])
+  const [tagIds, setTagIds] = useState<number[]>(project?.tagIds ?? [])
   const [disciplineOptions, setDisciplineOptions] = useState<Option[]>([])
   const [tagOptions, setTagOptions] = useState<Option[]>([])
-  const [communityId, setCommunityId] = useState(communities[0]?.id ?? '')
+  const [communityId, setCommunityId] = useState(project?.communityId ?? communities[0]?.id ?? '')
+  const [existingMedia, setExistingMedia] = useState<MediaItem[]>(project?.media ?? [])
   const [imageFiles, setImageFiles] = useState<File[]>([])
+  const mediaCount = existingMedia.length + imageFiles.length
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -37,6 +65,76 @@ export default function NewProject({
     supabase.from('disciplines').select('id, name').order('name').then(({ data }) => setDisciplineOptions(data ?? []))
     supabase.from('tags').select('id, name').order('name').then(({ data }) => setTagOptions(data ?? []))
   }, [])
+
+  async function saveEdits(supabase: ReturnType<typeof createClient>, media: MediaItem[], uploadedPaths: string[]) {
+    if (!project) return
+
+    const { data: updated, error } = await supabase
+      .from('projects')
+      .update({
+        community_id: communityId,
+        title: title.trim(),
+        description: description.trim(),
+        media,
+      })
+      .eq('id', project.id)
+      .select('id')
+
+    // RLS turns a disallowed update into zero rows rather than an error
+    const updateError = error ?? (updated?.length ? null : { message: 'You can only edit your own projects.' })
+    if (updateError) {
+      await supabase.storage.from(MEDIA_BUCKET).remove(uploadedPaths)
+      setSaving(false)
+      setError(updateError.message)
+      return
+    }
+
+    // Only touch the rows that changed. Inserts ignore duplicates so a retry
+    // after a partial failure doesn't trip over rows that already made it in.
+    const removedDisciplines = onlyIn(project.disciplineIds, disciplineIds)
+    const addedDisciplines = onlyIn(disciplineIds, project.disciplineIds)
+    const removedTags = onlyIn(project.tagIds, tagIds)
+    const addedTags = onlyIn(tagIds, project.tagIds)
+    const results = await Promise.all([
+      removedDisciplines.length > 0
+        ? supabase.from('project_discipline').delete().eq('project_id', project.id).in('discipline_id', removedDisciplines)
+        : { error: null },
+      addedDisciplines.length > 0
+        ? supabase
+            .from('project_discipline')
+            .upsert(
+              addedDisciplines.map((discipline_id) => ({ project_id: project.id, discipline_id })),
+              { ignoreDuplicates: true },
+            )
+        : { error: null },
+      removedTags.length > 0
+        ? supabase.from('project_tag').delete().eq('project_id', project.id).in('tag_id', removedTags)
+        : { error: null },
+      addedTags.length > 0
+        ? supabase
+            .from('project_tag')
+            .upsert(addedTags.map((tag_id) => ({ project_id: project.id, tag_id })), { ignoreDuplicates: true })
+        : { error: null },
+    ])
+
+    const joinError = results.find((result) => result.error)?.error
+    if (joinError) {
+      // The project itself saved, so keep the new uploads it now points to
+      setSaving(false)
+      setError(`Saved the project, but not all disciplines and tags: ${joinError.message}`)
+      return
+    }
+
+    // Clean up files for images that were removed from the project
+    const removedPaths = project.media
+      .filter((item) => !existingMedia.some((kept) => kept.url === item.url))
+      .flatMap((item) => mediaPath(item.url) ?? [])
+    if (removedPaths.length > 0) await supabase.storage.from(MEDIA_BUCKET).remove(removedPaths)
+
+    setSaving(false)
+    router.push(redirectTo)
+    router.refresh()
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -50,12 +148,12 @@ export default function NewProject({
 
     if (!user) {
       setSaving(false)
-      setError('You must be logged in to create a project.')
+      setError(`You must be logged in to ${project ? 'edit' : 'create'} a project.`)
       return
     }
 
     const uploadedPaths: string[] = []
-    const media: { type: 'image'; url: string }[] = []
+    const media: MediaItem[] = [...existingMedia]
 
     for (const [index, file] of imageFiles.entries()) {
       const path = `${user.id}/${Date.now()}-${index}${fileExtension(file.name)}`
@@ -70,7 +168,12 @@ export default function NewProject({
       media.push({ type: 'image', url: supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl })
     }
 
-    const { data: project, error } = await supabase
+    if (project) {
+      await saveEdits(supabase, media, uploadedPaths)
+      return
+    }
+
+    const { data: created, error } = await supabase
       .from('projects')
       .insert({
         owner_id: user.id,
@@ -93,19 +196,19 @@ export default function NewProject({
       disciplineIds.length > 0
         ? supabase
             .from('project_discipline')
-            .insert(disciplineIds.map((discipline_id) => ({ project_id: project.id, discipline_id })))
+            .insert(disciplineIds.map((discipline_id) => ({ project_id: created.id, discipline_id })))
         : { error: null },
       tagIds.length > 0
-        ? supabase.from('project_tag').insert(tagIds.map((tag_id) => ({ project_id: project.id, tag_id })))
+        ? supabase.from('project_tag').insert(tagIds.map((tag_id) => ({ project_id: created.id, tag_id })))
         : { error: null },
     ])
 
     const joinError = disciplineError ?? tagError
     if (joinError) {
       // Undo the whole save so a retry doesn't leave a duplicate project behind
-      await supabase.from('project_discipline').delete().eq('project_id', project.id)
-      await supabase.from('project_tag').delete().eq('project_id', project.id)
-      await supabase.from('projects').delete().eq('id', project.id)
+      await supabase.from('project_discipline').delete().eq('project_id', created.id)
+      await supabase.from('project_tag').delete().eq('project_id', created.id)
+      await supabase.from('projects').delete().eq('id', created.id)
       await supabase.storage.from(MEDIA_BUCKET).remove(uploadedPaths)
       setSaving(false)
       setError(joinError.message)
@@ -120,7 +223,7 @@ export default function NewProject({
 
   const Container = embedded ? 'div' : 'main'
 
-  if (communities.length === 0) {
+  if (communities.length === 0 && !project) {
     return (
       <Container className={styles.page}>
         {!embedded && <h1>Create new project</h1>}
@@ -133,7 +236,7 @@ export default function NewProject({
 
   return (
     <Container className={styles.page}>
-      {!embedded && <h1>Create new project</h1>}
+      {!embedded && <h1>{project ? 'Edit project' : 'Create new project'}</h1>}
       <form onSubmit={handleSubmit} className={styles.form}>
         <div className={styles.field}>
           <label htmlFor="community">Community</label>
@@ -186,6 +289,24 @@ export default function NewProject({
         />
         <fieldset className={styles.field}>
           <legend>Images (up to {MAX_MEDIA})</legend>
+          {existingMedia.map((item) => (
+            <div key={item.url} className={styles.mediaRow}>
+              {isVideo(item) ? (
+                <video src={item.url} width={60} height={60} style={{ objectFit: 'cover' }} muted preload="metadata" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={item.url} alt="" width={60} height={60} style={{ objectFit: 'cover' }} />
+              )}
+              <span>Current {isVideo(item) ? 'video' : 'image'}</span>
+              <button
+                type="button"
+                className={styles.button}
+                onClick={() => setExistingMedia((prev) => prev.filter((kept) => kept.url !== item.url))}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
           {imageFiles.map((file, index) => (
             <div key={index} className={styles.mediaRow}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -200,14 +321,14 @@ export default function NewProject({
               </button>
             </div>
           ))}
-          {imageFiles.length < MAX_MEDIA && (
+          {mediaCount < MAX_MEDIA && (
             <input
               type="file"
               accept="image/*"
               multiple
               onChange={(event) => {
                 const picked = Array.from(event.target.files ?? [])
-                setImageFiles((prev) => [...prev, ...picked].slice(0, MAX_MEDIA))
+                setImageFiles((prev) => [...prev, ...picked].slice(0, MAX_MEDIA - existingMedia.length))
                 event.target.value = ''
               }}
             />
